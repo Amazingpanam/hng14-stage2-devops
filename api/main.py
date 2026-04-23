@@ -3,18 +3,13 @@ import redis
 import uuid
 import os
 
-app = FastAPI()
+TESTING = os.getenv("TESTING", "false") == "true"
 
-redis_host = os.getenv("REDIS_HOST", "localhost")
-redis_port = int(os.getenv("REDIS_PORT", 6379))
-redis_password = os.getenv("REDIS_PASSWORD")
-
-r = redis.Redis(
-    host=redis_host,
-    port=redis_port,
-    password=redis_password,
-    decode_responses=True
-)
+if not TESTING:
+    import redis
+    r = redis.Redis(host="redis", port=6379)
+else:
+    r = None
 
 @app.post("/jobs")
 def create_job():

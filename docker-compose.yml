@@ -1,37 +1,26 @@
 version: "3.9"
 
 services:
+
   redis:
     image: redis:7-alpine
-    container_name: redis
-    command: ["redis-server"]
-    expose:
-      - "6379"
     networks:
       - app-network
-    restart: unless-stopped
+    expose:
+      - "6379"
 
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    container_name: api
+    build: ./api
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - TESTING=false
     depends_on:
       - redis
-    ports:
-      - "8000:8000"
     networks:
       - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    ports:
+      - "8000:8000"
     deploy:
       resources:
         limits:
@@ -39,10 +28,7 @@ services:
           memory: 256M
 
   worker:
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
-    container_name: worker
+    build: ./worker
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -51,7 +37,6 @@ services:
       - api
     networks:
       - app-network
-    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -59,10 +44,7 @@ services:
           memory: 256M
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: frontend
+    build: ./frontend
     environment:
       - API_URL=http://api:8000
     depends_on:
@@ -71,13 +53,6 @@ services:
       - "3000:3000"
     networks:
       - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     deploy:
       resources:
         limits:

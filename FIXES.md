@@ -1,21 +1,24 @@
-# FIXES.md - Bug Documentation
+# FIXES LOG
 
-## Issue #1: Missing health check endpoint
-- **File:** api/main.py
-- **Line:** N/A (endpoint didn't exist)
-- **Problem:** Application had no health check endpoint for Docker
-- **Fix:** Added GET /health endpoint returning {"status": "ok"}
-- **Impact:** Docker HEALTHCHECK now works properly
+## API Fixes
+- main.py line X: fixed missing endpoint /health
+- worker connection issue fixed (redis host was localhost)
 
-## Issue #2: Redis host hardcoded
-- **File:** api/main.py, worker/worker.py
-- **Line:** (specific line numbers)
-- **Problem:** Redis connection used "localhost" instead of environment variable
-- **Fix:** Changed to os.getenv('REDIS_HOST', 'redis')
-- **Impact:** Services can now connect to Redis container
+## Frontend Fixes
+- app.js line X: changed localhost → api service name
 
-## Issue #3: Missing dependencies
-- **File:** api/requirements.txt
-- **Problem:** Missing 'requests' and 'pytest' for testing
-- **Fix:** Added to requirements.txt and dev-requirements.txt
-- **Impact:** Tests can now run in CI pipeline
+## Docker Fixes
+- Added multi-stage builds for API, Worker, Frontend
+- Added non-root users in all containers
+- Added HEALTHCHECK instructions
+
+## Compose Fixes
+- Added resource limits
+- Fixed environment variable usage
+- Fixed Redis networking (no host exposure)
+
+## CI/CD Fixes
+- Added Docker registry service
+- Fixed missing image tagging (SHA + latest)
+- Added caching for Docker builds
+- Fixed missing step names

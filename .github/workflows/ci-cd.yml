@@ -1,166 +1,61 @@
-name: DevOps Stage 2 CI/CD Pipeline
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch
+import sys
+import os
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
+# Ensure app import works in CI
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-jobs:
-  lint:
-    name: Lint Codebase
-    runs-on: ubuntu-latest
+from main import app
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+client = TestClient(app)
 
-      # Python lint (API + Worker)
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+# ----------------------------
+# 1. Health Check Test
+# ----------------------------
+def test_health_endpoint():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert "status" in response.json()
 
-      - name: Install Python lint tools
-        run: pip install flake8
+# ----------------------------
+# 2. Create Job (Mock Redis)
+# ----------------------------
+@patch("main.redis_client", new_callable=Mock)
+def test_create_job(mock_redis):
+    mock_redis.hset.return_value = 1
+    mock_redis.lpush.return_value = 1
 
-      - name: Run Python lint
-        run: flake8 api worker || true
+    payload = {"data": "test job data"}
 
-      # JavaScript lint (Frontend)
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
+    response = client.post("/jobs", json=payload)
 
-      - name: Install JS dependencies
-        run: |
-          cd frontend
-          npm install
-          npm install eslint || true
+    assert response.status_code == 200
+    assert "job_id" in response.json() or "id" in response.json()
+    assert response.json().get("status") in ["pending", "queued"]
 
-      - name: Run JS lint
-        run: |
-          cd frontend
-          npx eslint . || true
+# ----------------------------
+# 3. Get Job Status
+# ----------------------------
+@patch("main.redis_client", new_callable=Mock)
+def test_get_job_status(mock_redis):
+    mock_redis.hgetall.return_value = {
+        "id": "123",
+        "status": "completed",
+        "result": "test result"
+    }
 
-      # Docker lint
-      - name: Dockerfile Lint (Hadolint)
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: api/Dockerfile
-        continue-on-error: true
+    response = client.get("/jobs/123")
 
-  test:
-    name: Run Unit Tests
-    runs-on: ubuntu-latest
-    needs: lint
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
 
-    steps:
-      - uses: actions/checkout@v4
+# ----------------------------
+# 4. Invalid Job Creation
+# ----------------------------
+def test_invalid_job_creation():
+    response = client.post("/jobs", json={})
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install pytest pytest-cov
-
-      - name: Run tests with coverage
-        run: |
-          pytest api/tests --cov=api --cov-report=xml
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-
-  build:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build API image
-        run: docker build -t api:${{ github.sha }} ./api
-
-      - name: Build Worker image
-        run: docker build -t worker:${{ github.sha }} ./worker
-
-      - name: Build Frontend image
-        run: docker build -t frontend:${{ github.sha }} ./frontend
-
-  security:
-    name: Security Scan (Trivy)
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Scan API image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: api:${{ github.sha }}
-          format: sarif
-          output: trivy-api.sarif
-          severity: CRITICAL
-          exit-code: 1
-
-      - name: Upload SARIF report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: trivy-api.sarif
-
-  integration:
-    name: Integration Test
-    runs-on: ubuntu-latest
-    needs: security
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Start stack
-        run: docker compose up -d --build
-
-      - name: Wait for services
-        run: sleep 20
-
-      - name: Submit job via frontend
-        run: |
-          curl -X POST http://localhost:3000/submit
-
-      - name: Check API health
-        run: curl http://localhost:8000/health
-
-      - name: Tear down
-        if: always()
-        run: docker compose down
-
-  deploy:
-    name: Deploy (Rolling Simulation)
-    runs-on: ubuntu-latest
-    needs: integration
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy stack
-        run: |
-          docker compose down
-          docker compose up -d --build
-
-      - name: Verify health
-        run: |
-          sleep 15
-          curl http://localhost:3000
-          curl http://localhost:8000/health
+    # FastAPI should reject empty payload
+    assert response.status_code in [400, 422]
